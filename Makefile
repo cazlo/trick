@@ -517,7 +517,7 @@ run-ubuntu:
 
 .PHONY: run-ubuntu-gui
 run-ubuntu-gui:
-	docker run -it trick:ubuntu-gui-latest
+	docker run -it -p 6901:6901 trick:ubuntu-gui-latest
 
 
 .PHONY: build-rocky
@@ -535,4 +535,4 @@ run-rocky:
 
 .PHONY: run-rocky-gui
 run-rocky-gui:
-	docker run -it trick:rocky-gui-latest
+	docker run -it -p 6901:6901 trick:rocky-gui-latest

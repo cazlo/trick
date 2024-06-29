@@ -296,7 +296,7 @@ COPY SIM_cannon_docker .
 # Build the SIM.
 RUN /apps/trick/bin/trick-CP
 
-# In out simulation, we decided to use port 9001 for our
+# In our simulation, we decided to use port 9001 for our
 # variable server port. We did this by adding
 # "trick.var_server_set_port(9001)" to our input file.
 
