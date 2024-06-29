@@ -1,7 +1,7 @@
 # How to "Containerize" Trick With Docker
 
-This HOWTO assumes that we building our Docker images on a Linux system. If you're using
-MacOS or Windows, the translation should hopefully be fairly straight forward.
+This HOWTO assumes that we are building our Docker images on a Linux system.
+If using Mac or Windows, the translation should hopefully be fairly straightforward.
 
 **Contents**
 
@@ -152,7 +152,8 @@ This docker container contains a full Trick development environment. You can't r
 ## Introduction
 
 In this example, we'll create a docker image from which we can run (a version of) ```SIM_cannon_numeric```,
-one of the variants of Trick's Cannon Ball simulation. This image will be based on the Trick:19.5.1 image the we previously built.
+one of the variants of Trick's Cannon Ball simulation. 
+This image will be based on the Trick:19.5.1 image previously built.
 
 Our containerized simulation won't start any variable server clients like the sim-control panel or graphics clients,  because we can't easily run graphics clients from __within__ the container. But, we __can__ easily connect graphics clients running on the host machine to our containerized simulation.
 
@@ -332,7 +333,7 @@ CMD ["/apps/run_sim.sh"]
    ```
   
 ### Running the docker image:
-To instanciate a container from the image: ```docker run --name misterbill --rm -P sim_cannon_docker &```
+To instantiate a container from the image: ```docker run --name misterbill --rm -P sim_cannon_docker &```
 
 * In a host terminal (not in the container) execute: 
   
@@ -365,7 +366,7 @@ java -jar SIM_cannon_docker/models/graphics/dist/CannonDisplay.jar <port> &
 ![](images/cannon_display.png)
 
 * Click **RELOAD**. This re-initializes the cannon. Then click **FIRE**. The cannon will fire.
-* Adjust the the controls on the left hand side of the graphics client.  **RELOAD** and **FIRE**.
+* Adjust the controls on the left hand side of the graphics client.  **RELOAD** and **FIRE**.
 * Do this until you're bored.
 
 If Trick is installed on your host then you can also connect :

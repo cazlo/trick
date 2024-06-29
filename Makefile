@@ -500,3 +500,39 @@ trick_lib: $(SIM_SERV_DIRS) $(UTILS_DIRS) | $(TRICK_LIB_DIR)
 
 # For NASA/JSC developers include optional rules
 -include Makefile_jsc_dirs
+
+
+.PHONY: build-ubuntu
+build-ubuntu:
+	docker build -f infra/ubuntu2204.Dockerfile -t trick:ubuntu-latest .
+
+.PHONY: build-ubuntu-gui
+build-ubuntu-gui:
+	docker build -f infra/ubuntu2204_GUI.Dockerfile -t trick:ubuntu-gui-latest .
+
+
+.PHONY: run-ubuntu
+run-ubuntu:
+	docker run -it trick:ubuntu-latest
+
+.PHONY: run-ubuntu-gui
+run-ubuntu-gui:
+	docker run -it trick:ubuntu-gui-latest
+
+
+.PHONY: build-rocky
+build-rocky:
+	docker build -f infra/rocky8.Dockerfile -t trick:rocky-latest .
+
+.PHONY: build-rocky-gui
+build-rocky-gui:
+	docker build -f infra/rocky8_GUI.Dockerfile -t trick:rocky-gui-latest .
+
+
+.PHONY: run-rocky
+run-rocky:
+	docker run -it trick:rocky-latest
+
+.PHONY: run-rocky-gui
+run-rocky-gui:
+	docker run -it trick:rocky-gui-latest
