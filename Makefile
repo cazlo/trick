@@ -508,7 +508,7 @@ build-ubuntu:
 
 .PHONY: build-ubuntu-gui
 build-ubuntu-gui:
-	docker build -f infra/ubuntu2204.Dockerfile --target runtime -t trick:ubuntu-gui-latest .
+	docker build -f infra/ubuntu2204.Dockerfile --target gl-runtime -t trick:ubuntu-gui-latest .
 
 
 .PHONY: run-ubuntu

@@ -1,0 +1,42 @@
+version: "2"
+
+services:
+  #### VNC
+
+  vnc-xfce-rocky-amdgpu:
+    image: trick:ubuntu-gui-latest
+#    build:
+#      context: ../../
+#      dockerfile: ./vnc-container/docker-headless-vnc-container/Dockerfile.rocky-xfce-vnc
+#      args:
+#        BASE_IMAGE: "rocky-amd-gpu:latest"
+    volumes:
+      - /dev/shm:/dev/shm # not necessary, but used by vnc if provided
+    ports:
+      - "5901:5901"
+      - "6901:6901"
+    environment:
+      DEBUG: "true"
+      DISPLAY: ":1"
+      VGL_DISPLAY: "/dev/dri/card1"
+      #      TURBO_VNC: "true"
+      #      TURBO_VNC_VIRTUALGL: "true"
+      TIGER_VNC_VIRTUALGL: "true"
+      # VNC_RESOLUTION: "3840x2160"
+    devices:
+      - "/dev/kfd:/dev/kfd"
+      #      - "/dev/dri/:/dev/dri/"
+      - "/dev/vga_arbiter:/dev/vga_arbiter"
+      - "/dev/dri/renderD128:/dev/dri/renderD128"
+      - "/dev/dri/card1:/dev/dri/card1"
+    tty: true
+    command:
+      - /bin/bash
+    #    security_opt:
+    #      - seccomp=unconfined
+    #    user: "root"
+    user: "1000:1000"
+    #    userns_mode: "host"
+    group_add:
+      - video
+      - render
