@@ -504,11 +504,11 @@ trick_lib: $(SIM_SERV_DIRS) $(UTILS_DIRS) | $(TRICK_LIB_DIR)
 
 .PHONY: build-ubuntu
 build-ubuntu:
-	docker build -f infra/ubuntu2204.Dockerfile -t trick:ubuntu-latest .
+	docker build -f infra/ubuntu2204.Dockerfile --target trick -t trick:ubuntu-latest .
 
 .PHONY: build-ubuntu-gui
 build-ubuntu-gui:
-	docker build -f infra/ubuntu2204_GUI.Dockerfile -t trick:ubuntu-gui-latest .
+	docker build -f infra/ubuntu2204.Dockerfile --target runtime -t trick:ubuntu-gui-latest .
 
 
 .PHONY: run-ubuntu
@@ -517,16 +517,16 @@ run-ubuntu:
 
 .PHONY: run-ubuntu-gui
 run-ubuntu-gui:
-	docker run -it -p 6901:6901 trick:ubuntu-gui-latest
+	docker run -it -p 6901:6901 -p 5901:5901 trick:ubuntu-gui-latest
 
 
 .PHONY: build-rocky
 build-rocky:
-	docker build -f infra/rocky8.Dockerfile -t trick:rocky-latest .
+	docker build -f infra/rocky8.Dockerfile --target trick -t trick:rocky-latest .
 
 .PHONY: build-rocky-gui
 build-rocky-gui:
-	docker build -f infra/rocky8_GUI.Dockerfile -t trick:rocky-gui-latest .
+	docker build -f infra/rocky8.Dockerfile --target runtime -t trick:rocky-gui-latest .
 
 
 .PHONY: run-rocky
@@ -535,4 +535,4 @@ run-rocky:
 
 .PHONY: run-rocky-gui
 run-rocky-gui:
-	docker run -it -p 6901:6901 trick:rocky-gui-latest
+	docker run -it -p 6901:6901 -p 5901:5901 trick:rocky-gui-latest

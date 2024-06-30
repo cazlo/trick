@@ -1,9 +1,13 @@
-FROM ubuntu:22.04
+# syntax=docker/dockerfile:1.7-labs
+FROM ubuntu:22.04 as base
 
-RUN apt-get update && apt-get install -y \
-bison \
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+apt update && apt upgrade -y &&  apt install -y \
 clang \
-flex \
 git \
 llvm \
 make \
@@ -26,28 +30,120 @@ libclang-dev \
 libudunits2-dev \
 libgtest-dev \
 default-jdk \
-python2.7-dev \
 python3-dev \
 python3-pip \
 python3-venv
+# python2.7-dev
 
-# todo maybe only needed if we are in non-slim sim runtime
-RUN apt-get install -y libgtest-dev libgmock-dev && \
-              cd /usr/src/gtest && \
-              cmake . && \
-              make && \
-              mv lib/libgtest* /usr/lib/ \
-              && make clean
+FROM base as trick-test
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+apt update && apt install -y \
+ bison flex libgtest-dev libgmock-dev && \
+cd /usr/src/gtest && \
+cmake . && \
+make -j $(nproc) && \
+mv lib/libgtest* /usr/lib/ \
+&& make -j $(nproc) clean
 
 ENV PYTHON_VERSION=3
 
-WORKDIR /apps
-COPY . trick
-WORKDIR /apps/trick
-RUN ./configure && make -j $(nproc)
+COPY --link --exclude=infra --exclude=docs --exclude=*.Dockerfile . /opt/trick
+RUN cd /opt/trick && ls -alh && ./configure && make -j $(nproc) && make install
+#    && make clean && rm -rf /root/.m2
 
-# Add ${TRICK_HOME}/bin to the PATH variable.
-ENV TRICK_HOME="/apps/trick"
-RUN echo "export PATH=${PATH}:${TRICK_HOME}/bin" >> ~/.bashrc
+RUN trick-version --help || true
 
-CMD ["/bin/bash"]
+WORKDIR /opt/trick
+CMD cd share/trick/trickops/ && \
+ python3 -m venv .venv && . .venv/bin/activate && pip3 install -r requirements.txt && \
+ cd ../../../; make test
+
+FROM base as trick
+COPY --link --from=trick-test /usr/local /usr/local
+
+FROM base as runtime
+
+## Connection ports for controlling the UI:
+# VNC port:5901
+# noVNC webport, connect via http://IP:6901/?password=vncpassword
+ENV DISPLAY=:1 \
+    VGL_DISPLAY=:1 \
+    VNC_PORT=5901 \
+    NO_VNC_PORT=6901 \
+    VNC_PW=vncpassword
+EXPOSE $VNC_PORT $NO_VNC_PORT
+### Envrionment config
+ENV HOME=/home/trick \
+    TERM=xterm \
+    STARTUPDIR=/opt/dockerstartup \
+    INST_SCRIPTS=/opt/install \
+    NO_VNC_HOME=/opt/noVNC \
+    VNC_COL_DEPTH=24 \
+    VNC_RESOLUTION=1280x1024 \
+    VNC_VIEW_ONLY=false \
+    DEBUG=true
+WORKDIR $HOME
+
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+apt update && apt install -y \
+       vim sudo wget debianutils net-tools bzip2 findutils procps \
+      python3-numpy \
+      libdbus-glib-1-dev \
+      psmisc \
+      mailcap  \
+    tigervnc-standalone-server  \
+    dbus  \
+    libnss-wrapper \
+    gettext && \
+  printf '\n# docker-headless-vnc-container:\n$localhost="no";\n' >>/etc/tigervnc/vncserver-config-defaults
+
+
+RUN mkdir -p $NO_VNC_HOME/utils/websockify && \
+  wget -qO- https://github.com/novnc/noVNC/archive/refs/tags/v1.3.0.tar.gz | tar xz --strip 1 -C $NO_VNC_HOME && \
+  # use older version of websockify to prevent hanging connections on offline containers, see https://github.com/ConSol/docker-headless-vnc-container/issues/50
+  wget -qO- https://github.com/novnc/websockify/archive/refs/tags/v0.10.0.tar.gz | tar xz --strip 1 -C $NO_VNC_HOME/utils/websockify  && \
+  #chmod +x -v $NO_VNC_HOME/utils/*.sh
+  ## for lighter interface try `vnc_lite.html` instead of `vnc.html`
+  ln -s $NO_VNC_HOME/vnc.html $NO_VNC_HOME/index.html
+
+# echo "Install Xfce4 UI components and disable screensaver and conflicting terminal"
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+apt update && apt install -y \
+    xfce4 xfce4-goodies \
+    fonts-dejavu-core fonts-freefont-ttf \
+    xfce4-terminal xfce4-whiskermenu-plugin && \
+apt remove -y \
+    xfce4-screensaver \
+    xfce4-power-manager xfce4-power-manager-plugins \
+    gnome-terminal && \
+#  rm /etc/xdg/autostart/xfce-polkit*  && \
+  /bin/dbus-uuidgen > /etc/machine-id
+
+ADD ./infra/xfce/ $HOME/
+
+#echo "Install nss-wrapper to be able to execute image as non-root user"
+RUN echo 'source $STARTUPDIR/generate_container_user' >> $HOME/.bashrc
+
+ADD ./infra/scripts/ $STARTUPDIR/
+
+# todo
+RUN chmod +x $STARTUPDIR/*.sh
+RUN chmod +x $HOME/*.sh
+RUN chown 1000:1000 $HOME
+RUN chown 1000:1000 $STARTUPDIR
+#RUN $INST_SCRIPTS/set_user_permission.sh $STARTUPDIR $HOME
+RUN adduser --home $HOME -u  1000 trick
+
+
+
+USER 1000
+
+COPY --link --from=trick /usr/local /usr/local
+COPY --link --chown=1000:1000 ./trick_sims/  /apps/trick/trick_sims
+
+ENTRYPOINT ["/opt/dockerstartup/vnc_startup.sh"]
