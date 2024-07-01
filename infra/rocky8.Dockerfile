@@ -137,6 +137,48 @@ RUN adduser --home $HOME -u  1000 trick
 USER 1000
 
 COPY --link --from=trick /usr/local /usr/local
-COPY --link --chown=1000:1000 ./trick_sims/  /apps/trick/trick_sims
+COPY --link --chown=1000:1000 ./trick_sims/  /home/trick/trick_sims
 
 ENTRYPOINT ["/opt/dockerstartup/vnc_startup.sh"]
+
+FROM runtime as gl-runtime
+
+USER 0
+
+# TurboVNC + VirtualGL
+RUN dnf install --enablerepo=epel -y \
+mesa-libGLU libXv mesa-libEGL libXtst xorg-x11-xauth glx-utils
+#libglu1-mesa libxv1 libegl1-mesa libxtst6 xauth mesa-utils
+
+# should probably build from source in-line and/or pull from github artifacts for 3.1.1 tag
+# note replace `x86_64` string below with `aarch64` for apple silicon or other arm runtimes
+ADD https://github.com/VirtualGL/virtualgl/releases/download/3.1.1/VirtualGL-3.1.1.x86_64.rpm /tmp/virtualgl.rpm
+RUN dnf install -y /tmp/virtualgl.rpm && \
+    printf "1\nn\nn\nn\nx\n" | /opt/VirtualGL/bin/vglserver_config
+
+COPY ./infra/gpu/xorg/99-virtualgl-dri.conf /etc/X11/xorg.conf.d/99-virtualgl-dri.conf
+COPY ./infra/gpu/99-virtualgl-dri.rules /etc/udev/rules.d/99-virtualgl-dri.rules
+
+RUN sed -i "s|Exec=startxfce4|Exec=vglrun -wm /usr/bin/startxfce4 --replace|" /usr/share/xsessions/xfce.desktop
+
+USER 1000
+
+FROM runtime as billiards-build
+
+USER 0
+# billiards deps
+RUN dnf install -y \
+eigen3-devel libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel mesa-libGL-devel mesa-libEGL-devel
+#    libeigen3-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libglx-dev libegl-dev
+
+USER 1000
+
+RUN cd /home/trick/trick_sims/SIM_billiards/models/graphics/cpp && \
+  mkdir build && cd build && cmake .. && make -j $(nproc)
+
+RUN cd /home/trick/trick_sims/SIM_billiards && \
+  trick-CP
+
+FROM gl-runtime as billiards-sim
+COPY --from=billiards-build /home/trick/trick_sims/SIM_billiards/ /home/trick/trick_sims/SIM_billiards/
+WORKDIR /home/trick/trick_sims/SIM_billiards

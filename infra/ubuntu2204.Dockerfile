@@ -131,15 +131,12 @@ RUN echo 'source $STARTUPDIR/generate_container_user' >> $HOME/.bashrc
 
 ADD ./infra/scripts/ $STARTUPDIR/
 
-# todo
 RUN chmod +x $STARTUPDIR/*.sh
 RUN chmod +x $HOME/*.sh
 RUN chown -R 1000:1000 $HOME
 RUN chown 1000:1000 $STARTUPDIR
 #RUN $INST_SCRIPTS/set_user_permission.sh $STARTUPDIR $HOME
 RUN adduser --home $HOME -u  1000 trick
-
-
 
 USER 1000
 
@@ -149,6 +146,28 @@ COPY --link --chown=1000:1000 ./trick_sims/  /home/trick/trick_sims
 ENTRYPOINT ["/opt/dockerstartup/vnc_startup.sh"]
 
 FROM runtime as gl-runtime
+
+USER 0
+
+# TurboVNC + VirtualGL
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+apt update && apt install -y \
+libglu1-mesa libxv1 libegl1-mesa libxtst6 xauth mesa-utils
+# should probably build from source in-line and/or pull from github artifacts for 3.1.1 tag
+# note replace `amd64` string below with `arm64` for apple silicon or other arm runtimes
+ADD https://github.com/VirtualGL/virtualgl/releases/download/3.1.1/virtualgl_3.1.1_amd64.deb /tmp/virtualgl.deb
+RUN apt install -y /tmp/virtualgl.deb && \
+    printf "1\nn\nn\nn\nx\n" | /opt/VirtualGL/bin/vglserver_config
+
+COPY ./infra/gpu/xorg/99-virtualgl-dri.conf /etc/X11/xorg.conf.d/99-virtualgl-dri.conf
+COPY ./infra/gpu/99-virtualgl-dri.rules /etc/udev/rules.d/99-virtualgl-dri.rules
+
+RUN sed -i "s|Exec=startxfce4|Exec=vglrun -wm /usr/bin/startxfce4 --replace|" /usr/share/xsessions/xfce.desktop
+
+USER 1000
+
+FROM runtime as billiards-build
 
 USER 0
 # billiards deps
@@ -165,26 +184,6 @@ RUN cd /home/trick/trick_sims/SIM_billiards/models/graphics/cpp && \
 RUN cd /home/trick/trick_sims/SIM_billiards && \
   trick-CP
 
+FROM gl-runtime as billiards-sim
+COPY --from=billiards-build /home/trick/trick_sims/SIM_billiards/ /home/trick/trick_sims/SIM_billiards/
 WORKDIR /home/trick/trick_sims/SIM_billiards
-
-USER 0
-
-# TurboVNC + VirtualGL
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-  --mount=type=cache,target=/var/lib/apt,sharing=locked \
-apt update && apt install -y \
-libglu1-mesa libxv1 libegl1-mesa libxtst6 xauth mesa-utils
-# todo build from source in-line and/or pull from github artifacts for 3.1.1 tag
-COPY ./infra/gpu/virtualgl_3.1.1_amd64.deb /tmp/virtualgl_3.1.1_amd64.deb
-RUN apt install -y /tmp/virtualgl_3.1.1_amd64.deb
-
-RUN printf "1\nn\nn\nn\nx\n" | /opt/VirtualGL/bin/vglserver_config
-
-COPY ./infra/gpu/xorg/99-virtualgl-dri.conf /etc/X11/xorg.conf.d/99-virtualgl-dri.conf
-COPY ./infra/gpu/99-virtualgl-dri.rules /etc/udev/rules.d/99-virtualgl-dri.rules
-
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-  --mount=type=cache,target=/var/lib/apt,sharing=locked \
-apt update && apt install -y \
-man-db
-

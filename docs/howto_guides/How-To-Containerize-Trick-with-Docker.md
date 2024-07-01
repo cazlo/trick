@@ -5,149 +5,107 @@ If using Mac or Windows, the translation should hopefully be fairly straightforw
 
 **Contents**
 
-* [Containerize a Basic Trick Environment](#containerize-a-basic-trick-environment)
-* [Containerize a Trick Simulation](#containerize-a-trick-simulation)
+* [Prerequisites](#Prerequisites)
+* [Example Containerized Trick Environment](#a-basic-trick-environment)
+* [Compiling and Running a Containerized Trick Simulation](#containerize-a-trick-simulation)
 
 ***
 
 ## Prerequisites:
 
-* Docker is installed on your machine.
-* A basic familiarity with Docker. ["A Docker Tutorial for Beginners"](https://docker-curriculum.com) is an excellent way. 
+* [Docker is installed on your machine](https://docs.docker.com/engine/install/). All the examples described in this article will work with any version of Docker that supports BuildKit (the default builder as of Docker 23).
+* A basic familiarity with Docker. ["A Docker Tutorial for Beginners"](https://docker-curriculum.com) is an excellent way.
 * A basic familiarity with bash shell scripting.
+* At least 5 GB of Disk space available as bare minium.
+* [Optional] If you wish to desire to experiment with GPU accelerated virtual desktops in trick sim containers, only a Linux host is currently supported.
 
-## Create a Place to Build Our Docker Images
+<a id=a-basic-trick-environment></a>
 
-For this HOWTO we'll try to stay organized by first creating a directory in
-which we can build our Docker images. Let's also create and environment
-variable for this directory.
+## Example Containerized Trick Environment
 
-* Create the **DockerPlayGround** directory and **DOCKER_PLAYGROUND** environment variable.
+A basic containerized trick environment is included with the trick git repository.
+To get started, clone the trick repository to your host.
 
-```bash
-mkdir DockerPlayGround
-export DOCKER_PLAYGROUND="`pwd`/DockerPlayGround"
-```
-<a id=containerize-a-basic-trick-environment></a>
-## Containerize a Basic Trick Environment
+### Architecture
 
-In this example we'll build a Docker image, based on Ubuntu 18.04, with Trick 19.5.1
-installed.
+The build and runtime of the container based deployment is contained in 2 main places:
 
-### Dockerfile
+- **Makefile**: commands `run-docker` and `run-docker-mesa` to build and interact with the dockerized trick environment.
+- **infra** Folder: Here you will find Docker build files (*.Dockerfile), a docker-compose.yaml defining various build and runtime configurations, and misc scripts necessary to bootstrap a containerized XFCE Desktop Environment. 
 
-```docker
-# ------------------------------------------------------------------------------
-# The image we are building with THIS Dockerfile is based on the ubuntu:18.04
-# Docker image from dockerhub (hub.docker.com).
-# ------------------------------------------------------------------------------
-FROM ubuntu:18.04
+#### run-docker Command
 
-# ------------------------------------------------------------------------------
-# Install Trick Dependencies identified at
-# https://nasa.github.io/trick/documentation/install_guide/Install-Guide#ubuntu
-# ------------------------------------------------------------------------------
-RUN apt-get update && apt-get install -y \
-bison \
-clang \
-flex \
-git \
-llvm \
-make \
-maven \
-swig \
-cmake \
-curl \
-g++ \
-libx11-dev \
-libxml2-dev \
-libxt-dev \
-libmotif-common \
-libmotif-dev \
-python3-dev \
-zlib1g-dev \
-llvm-dev \
-libclang-dev \
-libudunits2-dev \
-libgtest-dev \
-openjdk-11-jdk \
-zip
+Example: `make run-docker target=trick-test os=ubuntu2204`
 
-ENV PYTHON_VERSION=3
+`target` options
 
-# ------------------------------------------------------------------------------
-# Get Trick version 19.5.1 from GitHub, configure and build it.
-# ------------------------------------------------------------------------------
-# We want to clone Trick into the /apps directory of our image.
-WORKDIR /apps
-# Get the 19.5.1 branch (an official release) of Trick from Github.
-RUN git clone -b 19.5.1 https://github.com/nasa/trick.git
-# cd into the directory we just created and ..
-WORKDIR /apps/trick
-# configure and make Trick.
-RUN ./configure && make
+- `trick-test` runs trick unit and integration tests, and outputs junit test reports to folder `infra/test_reports`.
+- `cli-runtime` starts a shell into a trick enabled environment. this environment can be used to develop, compile, and run simulations in a headless (no GUI), CLI only environment.
+- `gui-runtime` starts a trick enabled Desktop environment accessible via a VNC virtual desktop session without requiring a GPU on the runtime host. 
 
-# ------------------------------------------------------------------------------
-# Add ${TRICK_HOME}/bin to the PATH variable.
-# ------------------------------------------------------------------------------
-ENV TRICK_HOME="/apps/trick"
-RUN echo "export PATH=${PATH}:${TRICK_HOME}/bin" >> ~/.bashrc
+`os` options
 
-CMD ["/bin/bash"]
-```
+- `ubuntu2204` for Ubuntu 22.04
+- `rocky8` for RockyLinux 8 
 
-### Building the docker image:
+This command does not require the trick folder to have been initialized for build with `./configure`.
 
-* Create a directory for building this docker image:
 
-  ```bash
-  cd ${DOCKER_PLAYGROUND}
-  mkdir TRICK_19_5_1
-  cd TRICK_19_5_1
-  ```
+#### run-docker-mesa Command
 
-* Create a file named ```Dockerfile``` that contains the content listed above.
+This command is intended only to be used on Linux hosts which have a GPU available and working using the open source `mesa` GPU drivers.
+It has been tested as functional on multiple modern AMD GPUs using the `amdgpu` mesa driver and should work with intel hardware with minimal modification if any.
 
-* Build the Docker image by executing: ```docker build --tag trick:19.5.1 .```
+Example: `make run-docker-mesa target_mesa=mesa-default-docker os=ubuntu2204`
 
-   :exclamation: This may take a few minutes.
+`target_mesa` options
 
-* When the build completes, execute : ```docker images```.
+- `mesa-default-docker` if using the default, rootful docker context (run `docker context ls` if not sure).  
+- `mesa-rootless-docker` if using the `rootless` docker context (run `docker context ls` if not sure).
 
-   You should see a record of the image that you just created:
+`os` options
 
-   ```
-   REPOSITORY         TAG       IMAGE ID       CREATED        SIZE
-   trick              19.5.1    1023a17d7b78   2 minutes ago  2.61GB
-   ```
+- `ubuntu2204` for Ubuntu 22.04
+- `rocky8` for RockyLinux 8 
 
-### Running the docker image:
-To Instantiate a container from the image: ```docker run --rm -it trick:19.5.1```
+This command does not require the trick folder to have been initialized for build with `./configure`.
 
-You should see the bash shell prompt from your container. Something like:
+#### Image (re)build optimizations
+
+The images have been organized into several layers, several of which can be built in parallel.
+A "clean" rebuild of the system will typically involve a dependency tree which looks like the following diagram:
+
+```mermaid
+
+flowchart LR
+    base --> trick-test
+             trick-test --> trick
+    base --> trick
+    base --> runtime
+       trick --> runtime
+    runtime --> gl-runtime
+    runtime --> billiards-build
+    billiards-build --> billiards-sim
+    gl-runtime --> billiards-sim
 
 ```
-root@8615d8bf75c5:/apps/trick#
-```
 
-Execute: ```ls``` at the prompt to see that it contains Trick.
+Since `base` is the root of all dependencies, we want it to change infrequently. 
+This is where all common OS packages are installed, resulting in a size of ~2.4GB for Rocky 8 and ~1.96 for Ubuntu 22.04.
 
-```
-CMakeLists.txt  Makefile                autoconf      configure  lib      test_overrides.mk trickops.py
-CMakeModules.   README.md               bin           docs       libexec  test_sims.yml     trigger
-CMakeTestFiles  TrickLogo.png           config.log    doxygen    share    trick_sims
-LICENSE         TrickLogo_darkmode.png. config.status include    test     trick_source
-root@8615d8bf75c5:/apps/trick#
-```
+On the Ubuntu 22.04 image, the /var/cache/apt and /var/lib/apt are setup as special build cache mounts.
+This is done with `--mount=type=cache` and `sharing=locked` as suggested by Docker. See also https://docs.docker.com/build/cache/.
+The result is even if this layer needs to be re-built during local development, it can likely re-use the ~1GB of Debian dependencies needed for this step, instead of re-downloading them.
 
-This docker container contains a full Trick development environment. You can't run GUI applications on it but you can build a simulation.
+Only the ~300MB of "installed" trick dependencies are used for the `runtime` stage, saving ~300-600MB of space on the runtime image.
+This is important because the `runtime` stage installs ~1GB of dependencies necessary to setup a local VNC server which runs a decently setup XFCE Desktop environment.
+This is accomplished with the `COPY --link --from=trick /usr/local /usr/local` at the end of the `runtime` stage build.
+This linkage is intentionally setup at the end of this stage so that re-builds of the trick binaries to not invalidate the cache of layers in the expensive to run `runtime` stage.
+
+The `gl-runtime` and `billiards-build` are re-built in parallel after `runtime` is finished.
 
 <a id=containerize-a-trick-simulation></a>
-## Containerize a Trick Simulation
-
-### Prerequisites:
-
-* The trick:19.5.1 docker image described above.
+## Compiling and Running a Containerized Trick Simulation
 
 ## Introduction
 
@@ -159,20 +117,6 @@ Our containerized simulation won't start any variable server clients like the si
 
 ### Creating a Docker friendly version of ```SIM_cannon_numeric```
 
-* Create a directory for building this docker image:
-
-   ```bash
-   cd ${DOCKER_PLAYGROUND}
-   mkdir SIM_cannon_docker_build
-   cd SIM_cannon_docker_build
-   ```
-   
-* Create a directory for our version of SIM_cannon.
-   
-   ```bash
-   mkdir SIM_cannon_docker
-   cd SIM_cannon_docker
-   ```
 
 * Copy the ```SIM_cannon_numeric``` **S_define** file into the current directory.
      
@@ -250,7 +194,7 @@ Our containerized simulation won't start any variable server clients like the si
    ```
    mkdir -p models/graphics/resources
    ```
-   * Down-load the sound files.
+   * Download the sound files.
    
    Unfortunately, binary files are more difficult to down-load from Github than text files. 
    
@@ -260,7 +204,7 @@ Our containerized simulation won't start any variable server clients like the si
      
    * Download Explosion.wav  from [here](https://github.com/nasa/trick/blob/master/trick_sims/Cannon/models/graphics/resources/Explosion.wav).
 
-:exclamation: When you download the wave files from Github, their names may be set to a flattened version of their full pathnames. So, we have to rename them to their real names.
+:exclamation: When you download the wave files from GitHub, their names may be set to a flattened version of their full pathnames. So, we have to rename them to their real names.
       
    * Rename the down-loaded wave files to **CannonBoom.wav**, and **Explosion.wav** respectively, and move them both to ```models/graphics/resources/```.
 
@@ -276,61 +220,6 @@ Our containerized simulation won't start any variable server clients like the si
 ### Building the Docker Image
 
 
-#### Dockerfile
-
-```
-# ------------------------------------------------------------------------------
-# The image we are building with THIS Dockerfile is based on the trick:19.5.1
-# Docker image that we built previously.
-# ------------------------------------------------------------------------------
-FROM trick:19.5.1
-
-# ------------------------------------------------------------------------------
-# Copy the simulation source code into the image and build it.
-# ------------------------------------------------------------------------------
-# Set current working directory to the directory where we want our SIM code.
-WORKDIR /apps/SIM_cannon
-# Copy the simulation source code from our (host) image-build directory into our
-# image.
-COPY SIM_cannon_docker .
-# Build the SIM.
-RUN /apps/trick/bin/trick-CP
-
-# In our simulation, we decided to use port 9001 for our
-# variable server port. We did this by adding
-# "trick.var_server_set_port(9001)" to our input file.
-
-#Expose the variable server port.
-EXPOSE 9001/tcp
-
-# Make a script to run SIM_cannon from the /apps directory.
-RUN echo "#! /bin/bash" >> /apps/run_sim.sh
-RUN echo "cd /apps/SIM_cannon" >> /apps/run_sim.sh
-RUN echo "./S_main_Linux_7.5_x86_64.exe RUN_demo/input.py" >> /apps/run_sim.sh
-RUN chmod +x /apps/run_sim.sh
-
-CMD ["/apps/run_sim.sh"]
-```
-
-* Make sure you're in the right directory.
-
-```bash
-   cd ${DOCKER_PLAYGROUND}/SIM_cannon_docker_build
-```
-
-* Create a file named ```Dockerfile``` that contains the content listed above.
-
-* Build the Docker image by executing: ```docker build --tag sim_cannon_docker .```
-
-* When the build completes, execute : ```docker images```.
-
-   You should see a record of the image that you just created:
-
-   ```
-   REPOSITORY          TAG       IMAGE ID       CREATED          SIZE
-   sim_cannon_docker   latest    d4547502c2a4   13 seconds ago   2.61GB
-   trick               19.5.1    1023a17d7b78   2 minutes ago    2.61GB
-   ```
   
 ### Running the docker image:
 To instantiate a container from the image: ```docker run --name misterbill --rm -P sim_cannon_docker &```
@@ -378,5 +267,4 @@ trick-simcontrol localhost <port> &
 You can shut down the sim from the trick-simcontrol panel when you're done.
 or if you don't have Trick installed, just use: ```docker kill misterbill```.
 
-# THE END
 

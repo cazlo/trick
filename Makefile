@@ -501,38 +501,21 @@ trick_lib: $(SIM_SERV_DIRS) $(UTILS_DIRS) | $(TRICK_LIB_DIR)
 # For NASA/JSC developers include optional rules
 -include Makefile_jsc_dirs
 
+target=trick-test
+os=ubuntu2204
+# options for target = trick-test, cli-runtime, gui-runtime
+# options for os     = ubuntu2204, rocky8
+.PHONY: run-docker
+run-docker:
+	export DOCKERFILE=infra/${os}.Dockerfile &&\
+	docker compose -f infra/docker-compose.yaml run --service-ports --remove-orphans --build ${target}
 
-.PHONY: build-ubuntu
-build-ubuntu:
-	docker build -f infra/ubuntu2204.Dockerfile --target trick -t trick:ubuntu-latest .
+target_mesa=mesa-default-docker
+# options for target_mesa = mesa-default-docker, mesa-rootless-docker
+.PHONY: run-docker-mesa
+run-docker-mesa:
+	export VIDEO_GROUP_NUMBER=$(getent group video | cut -d: -f3) && \
+	export RENDER_GROUP_NUMBER=$(getent group render | cut -d: -f3) && \
+	export DOCKERFILE=infra/${os}.Dockerfile &&\
+	docker compose -f infra/docker-compose.yaml run --service-ports --remove-orphans --build ${target_mesa}
 
-.PHONY: build-ubuntu-gui
-build-ubuntu-gui:
-	docker build -f infra/ubuntu2204.Dockerfile --target gl-runtime -t trick:ubuntu-gui-latest .
-
-
-.PHONY: run-ubuntu
-run-ubuntu:
-	docker run -it trick:ubuntu-latest
-
-.PHONY: run-ubuntu-gui
-run-ubuntu-gui:
-	docker run -it -p 6901:6901 -p 5901:5901 trick:ubuntu-gui-latest
-
-
-.PHONY: build-rocky
-build-rocky:
-	docker build -f infra/rocky8.Dockerfile --target trick -t trick:rocky-latest .
-
-.PHONY: build-rocky-gui
-build-rocky-gui:
-	docker build -f infra/rocky8.Dockerfile --target runtime -t trick:rocky-gui-latest .
-
-
-.PHONY: run-rocky
-run-rocky:
-	docker run -it trick:rocky-latest
-
-.PHONY: run-rocky-gui
-run-rocky-gui:
-	docker run -it -p 6901:6901 -p 5901:5901 trick:rocky-gui-latest

@@ -109,9 +109,6 @@ if [[ ${TURBO_VNC:-} == "true" ]]; then
   vnc_cmd="$VNCSERVER_CMD -depth $VNC_COL_DEPTH -geometry $VNC_RESOLUTION $DISPLAY -novnc $NO_VNC_HOME -wm xfce" # todo handle other WM
 else
   vnc_cmd="$VNCSERVER_CMD $DISPLAY -depth $VNC_COL_DEPTH -geometry $VNC_RESOLUTION PasswordFile=$HOME/.vnc/passwd"
-  if [[ ${TIGER_VNC_VIRTUALGL:-} == "true" ]]; then
-    sed -i 's|Exec=startxfce4|Exec=vglrun -wm startxfce4|' /usr/share/xsessions/xfce.desktop
-  fi
 fi
 if [[ ${VNC_PASSWORDLESS:-} == "true" ]]; then
   vnc_cmd="${vnc_cmd} -SecurityTypes None"
@@ -137,6 +134,7 @@ echo -e "\nnoVNC HTML client started:\n\t=> connect via http://$VNC_IP:$NO_VNC_P
 if [[ $DEBUG == true ]] || [[ $1 =~ -t|--tail-log ]]; then
     echo -e "\n------------------ $HOME/.vnc/*$DISPLAY.log ------------------"
     # if option `-t` or `--tail-log` block the execution and tail the VNC log
+    tail -f $STARTUPDIR/*.log $HOME/wm.log
     tail -f $STARTUPDIR/*.log $HOME/.vnc/*$DISPLAY.log
 fi
 

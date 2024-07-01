@@ -1,15 +1,41 @@
-version: "2"
+#version: "3"
 
 services:
-  #### VNC
+  #### Base trick runtimes
 
-  vnc-xfce-rocky-amdgpu:
-    image: trick:ubuntu-gui-latest
-#    build:
-#      context: ../../
-#      dockerfile: ./vnc-container/docker-headless-vnc-container/Dockerfile.rocky-xfce-vnc
-#      args:
-#        BASE_IMAGE: "rocky-amd-gpu:latest"
+  trick-test:
+    build:
+      context: ..
+      dockerfile: ${DOCKERFILE}
+      target: trick-test
+    volumes:
+      - ./test_reports:/opt/trick/trick_test
+
+  cli-runtime:
+    build:
+      context: ..
+      dockerfile: ${DOCKERFILE}
+      target: trick
+    volumes:
+      - ../trick_sims:/opt/trick_sims
+
+  gui-runtime:
+    build:
+      context: ..
+      dockerfile: ${DOCKERFILE}
+      target: runtime
+    volumes:
+      - /dev/shm:/dev/shm # not necessary, but used by vnc if provided
+    ports:
+      - "5901:5901" # VNC
+      - "6901:6901" # noVNC
+
+  ####  GL accerated runtimes
+  mesa-default-docker:
+    build:
+      context: ..
+      dockerfile: ${DOCKERFILE}
+      target: billiards-sim
     volumes:
       - /dev/shm:/dev/shm # not necessary, but used by vnc if provided
     ports:
@@ -23,20 +49,49 @@ services:
       #      TURBO_VNC_VIRTUALGL: "true"
       TIGER_VNC_VIRTUALGL: "true"
       # VNC_RESOLUTION: "3840x2160"
+#      VIDEO_GROUP_NUMBER: "${VIDEO_GROUP_NUMBER:-$(getent group video | cut -d: -f3)}"
+#      RENDER_GROUP_NUMBER: "${VIDEO_GROUP_NUMBER:-$(getent group render | cut -d: -f3)}"
+      CARD_NUMBER: "card1"
     devices:
-      - "/dev/kfd:/dev/kfd"
-      #      - "/dev/dri/:/dev/dri/"
-      - "/dev/vga_arbiter:/dev/vga_arbiter"
+      - "/dev/dri/renderD128:/dev/dri/renderD128"
+      # note you may need to replace "card1" below for your specific machine setup
+      - "/dev/dri/${CARD_NUMBER}:/dev/dri/${CARD_NUMBER}"
+    tty: true
+    command:
+      - /bin/bash
+    user: "1000:1000"
+    group_add:
+      - video
+      - render
+#      - kvm
+      - ${VIDEO_GROUP_NUMBER:-44}
+      - ${RENDER_GROUP_NUMBER:-109}
+
+  # note: this is intended to only be used when in the docker "rootless" context
+  # not the "default" context, which is root-full
+  mesa-rootless-docker:
+    build:
+      context: ..
+      dockerfile: ${DOCKERFILE}
+      target: billiards-sim
+    volumes:
+      - /dev/shm:/dev/shm # not necessary, but used by vnc if provided
+    ports:
+      - "5901:5901"
+      - "6901:6901"
+    environment:
+      DEBUG: "true"
+      DISPLAY: ":1"
+      VGL_DISPLAY: "/dev/dri/card1"
+      TIGER_VNC_VIRTUALGL: "true"
+    devices:
       - "/dev/dri/renderD128:/dev/dri/renderD128"
       - "/dev/dri/card1:/dev/dri/card1"
     tty: true
     command:
       - /bin/bash
-    #    security_opt:
-    #      - seccomp=unconfined
-    #    user: "root"
-    user: "1000:1000"
-    #    userns_mode: "host"
+    user: "root"
     group_add:
       - video
       - render
+

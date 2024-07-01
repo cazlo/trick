@@ -7,3 +7,4 @@ infra/*.Dockerfile
 LICENSE
 README.md
 .dockerignore
+docker-compose.yaml
