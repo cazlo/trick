@@ -4,6 +4,7 @@ services:
   #### Base trick runtimes
 
   trick-test:
+    image: nasatrick/trick-test
     build:
       context: ..
       dockerfile: ${DOCKERFILE}
@@ -12,14 +13,18 @@ services:
       - ./test_reports:/opt/trick/trick_test
 
   cli-runtime:
+    image: nasatrick/cli-runtime
     build:
       context: ..
       dockerfile: ${DOCKERFILE}
       target: trick
+    ports:
+      - "9001:9001" # default port of trick variable server
     volumes:
       - ../trick_sims:/opt/trick_sims
 
   gui-runtime:
+    image: nasatrick/gui-runtime
     build:
       context: ..
       dockerfile: ${DOCKERFILE}
@@ -32,6 +37,7 @@ services:
 
   ####  GL accerated runtimes
   mesa-default-docker:
+    image: nasatrick/mesa-default-docker
     build:
       context: ..
       dockerfile: ${DOCKERFILE}
@@ -44,18 +50,16 @@ services:
     environment:
       DEBUG: "true"
       DISPLAY: ":1"
-      VGL_DISPLAY: "/dev/dri/card1"
+      VGL_DISPLAY: "${CARD_NUMBER:-card1}"
       #      TURBO_VNC: "true"
       #      TURBO_VNC_VIRTUALGL: "true"
       TIGER_VNC_VIRTUALGL: "true"
       # VNC_RESOLUTION: "3840x2160"
 #      VIDEO_GROUP_NUMBER: "${VIDEO_GROUP_NUMBER:-$(getent group video | cut -d: -f3)}"
 #      RENDER_GROUP_NUMBER: "${VIDEO_GROUP_NUMBER:-$(getent group render | cut -d: -f3)}"
-      CARD_NUMBER: "card1"
     devices:
       - "/dev/dri/renderD128:/dev/dri/renderD128"
-      # note you may need to replace "card1" below for your specific machine setup
-      - "/dev/dri/${CARD_NUMBER}:/dev/dri/${CARD_NUMBER}"
+      - "${CARD_NUMBER:-card1}:${CARD_NUMBER:-card1}"
     tty: true
     command:
       - /bin/bash
@@ -63,13 +67,13 @@ services:
     group_add:
       - video
       - render
-#      - kvm
-      - ${VIDEO_GROUP_NUMBER:-44}
-      - ${RENDER_GROUP_NUMBER:-109}
+      - ${VIDEO_GROUP_NUMBER:-1}
+      - ${RENDER_GROUP_NUMBER:-2}
 
   # note: this is intended to only be used when in the docker "rootless" context
   # not the "default" context, which is root-full
   mesa-rootless-docker:
+    image: nasatrick/mesa-rootless-docker
     build:
       context: ..
       dockerfile: ${DOCKERFILE}
@@ -82,11 +86,11 @@ services:
     environment:
       DEBUG: "true"
       DISPLAY: ":1"
-      VGL_DISPLAY: "/dev/dri/card1"
+      VGL_DISPLAY: "${CARD_NUMBER:-card1}"
       TIGER_VNC_VIRTUALGL: "true"
     devices:
       - "/dev/dri/renderD128:/dev/dri/renderD128"
-      - "/dev/dri/card1:/dev/dri/card1"
+      - "${CARD_NUMBER:-card1}:${CARD_NUMBER:-card1}"
     tty: true
     command:
       - /bin/bash
@@ -94,4 +98,5 @@ services:
     group_add:
       - video
       - render
-
+      - ${VIDEO_GROUP_NUMBER:-1}
+      - ${RENDER_GROUP_NUMBER:-2}

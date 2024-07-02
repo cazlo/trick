@@ -508,14 +508,17 @@ os=ubuntu2204
 .PHONY: run-docker
 run-docker:
 	export DOCKERFILE=infra/${os}.Dockerfile &&\
-	docker compose -f infra/docker-compose.yaml run --service-ports --remove-orphans --build ${target}
+	docker compose -f infra/docker-compose.yaml run \
+	 --service-ports --remove-orphans --build ${target}
 
 target_mesa=mesa-default-docker
 # options for target_mesa = mesa-default-docker, mesa-rootless-docker
 .PHONY: run-docker-mesa
 run-docker-mesa:
-	export VIDEO_GROUP_NUMBER=$(getent group video | cut -d: -f3) && \
-	export RENDER_GROUP_NUMBER=$(getent group render | cut -d: -f3) && \
-	export DOCKERFILE=infra/${os}.Dockerfile &&\
-	docker compose -f infra/docker-compose.yaml run --service-ports --remove-orphans --build ${target_mesa}
+	VIDEO_GROUP_NUMBER=$(shell getent group video | cut -d: -f3) \
+	RENDER_GROUP_NUMBER=$(shell getent group render | cut -d: -f3) \
+	CARD_NUMBER=$(shell find /dev/dri -name 'card*' -print -quit | head -n 1) \
+	DOCKERFILE=infra/${os}.Dockerfile \
+	docker compose -f infra/docker-compose.yaml run \
+	 --service-ports --remove-orphans --build ${target_mesa}
 
