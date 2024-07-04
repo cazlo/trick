@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7-labs
-FROM rockylinux:8 as base
-
+# This layer represents the bare minimum dependencies needed to run trick sims after they are compiled
+FROM rockylinux:8 as minimal-base
 RUN echo "max_parallel_downloads=20" >> /etc/dnf/dnf.conf
 
 RUN dnf -y  install epel-release && \
@@ -9,7 +9,32 @@ RUN dnf -y  install epel-release && \
   dnf config-manager --enable powertools && \
   dnf clean all
 
-# trick runtime dependencies
+RUN dnf install -y \
+python3-devel \
+udunits2-devel \
+zlib-devel \
+libxml2-devel
+
+FROM minimal-base as minimal-sim-compile-base
+
+RUN dnf install -y \
+clang \
+llvm \
+make \
+cmake \
+zip \
+\
+swig \
+gcc-c++ \
+libxml2-devel \
+zlib-devel \
+llvm-devel \
+clang-devel \
+udunits2-devel
+
+FROM minimal-sim-compile-base as base
+
+# trick minimum compile dependencies
 RUN dnf install -y \
 clang \
 flex \
@@ -21,23 +46,24 @@ cmake \
 zip \
 gdb \
 \
-clang-devel \
+swig \
+curl \
 gcc \
 gcc-c++ \
-java-11-openjdk \
 libxml2-devel \
-llvm-devel \
-llvm-static \
 openmotif \
 openmotif-devel \
-perl \
-perl-Digest-MD5 \
+zlib-devel \
+llvm-devel \
+llvm-static \
+clang-devel \
 udunits2 \
 udunits2-devel \
+perl \
+perl-Digest-MD5 \
 which \
-zlib-devel \
-python3-devel \
-swig && \
+java-11-openjdk \
+python3-devel && \
   dnf clean all
 
 FROM base as trick-test
@@ -50,19 +76,29 @@ gtest-devel gmock-devel swig diffutils  bison  java-11-openjdk-devel ncurses-dev
 ENV PYTHON_VERSION=3
 
 COPY --link --exclude=infra --exclude=docs --exclude=*.Dockerfile . /opt/trick
-RUN cd /opt/trick && ls -alh && ./configure && make -j $(nproc) && make install && rm -rf /root/.m2
+RUN cd /opt/trick && ls -alh && ./configure && make -j $(nproc) && make install &&\
+     trick-version --help &&\
+     rm -rf /root/.m2 && \
+     rm -rf /user/localshare/doc
+#    && make clean
 
-RUN trick-version --help || true
+# todo  everything below could probably be done as user 1000
+# setup test dependencies
+RUN cd /opt/trick/share/trick/trickops/ && \
+     python3 -m venv .venv && . .venv/bin/activate && pip3 install -r requirements.txt
+
+COPY --link ./trick_sims /opt/trick/trick_sims
 
 WORKDIR /opt/trick
-CMD cd share/trick/trickops/ && \
- python3 -m venv .venv && . .venv/bin/activate && pip3 install -r requirements.txt && \
- cd ../../../; make test
+CMD cd /opt/trick/share/trick/trickops && \
+. .venv/bin/activate && \
+cd /opt/trick && \
+make test
 
-FROM base as trick
+FROM minimal-sim-compile-base as cli-runtime
 COPY --link --from=trick-test /usr/local /usr/local
 
-FROM base as runtime
+FROM minimal-base as gui-runtime
 
 ## Connection ports for controlling the UI:
 # VNC port:5901
@@ -119,6 +155,11 @@ RUN dnf --enablerepo=epel -y -x gnome-keyring --skip-broken groups install "Xfce
   rm /etc/xdg/autostart/xfce-polkit*  && \
   /bin/dbus-uuidgen > /etc/machine-id
 
+# Install trick GUI runtime dependencies
+RUN dnf install -y \
+    java-11-openjdk  \
+    openmotif
+
 ADD ./infra/xfce/ $HOME/
 
 #echo "Install nss-wrapper to be able to execute image as non-root user"
@@ -136,18 +177,18 @@ RUN adduser --home $HOME -u  1000 trick
 
 USER 1000
 
-COPY --link --from=trick /usr/local /usr/local
+COPY --link --from=trick-test /usr/local /usr/local
 COPY --link --chown=1000:1000 ./trick_sims/  /home/trick/trick_sims
 
 ENTRYPOINT ["/opt/dockerstartup/vnc_startup.sh"]
 
-FROM runtime as gl-runtime
+FROM gui-runtime as gl-runtime
 
 USER 0
 
 # TurboVNC + VirtualGL
-RUN dnf install --enablerepo=epel -y \
-mesa-libGLU libXv mesa-libEGL libXtst xorg-x11-xauth glx-utils
+RUN dnf install --enablerepo=epel -y  \
+mesa-libGLU libXv mesa-libEGL libXtst xorg-x11-xauth glx-utils freeglut-devel
 #libglu1-mesa libxv1 libegl1-mesa libxtst6 xauth mesa-utils
 
 # should probably build from source in-line and/or pull from github artifacts for 3.1.1 tag
@@ -163,7 +204,8 @@ RUN sed -i "s|Exec=startxfce4|Exec=vglrun -wm /usr/bin/startxfce4 --replace|" /u
 
 USER 1000
 
-FROM runtime as billiards-build
+####### Billiards sim example with only Virtual Desktop Image setup due to tight coupling with this sim and display
+FROM trick-test as billiards-build
 
 USER 0
 # billiards deps
@@ -173,12 +215,33 @@ eigen3-devel libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel mesa
 
 USER 1000
 
-RUN cd /home/trick/trick_sims/SIM_billiards/models/graphics/cpp && \
+RUN cd /opt/trick/trick_sims/SIM_billiards/models/graphics/cpp && \
   mkdir build && cd build && cmake .. && make -j $(nproc)
 
-RUN cd /home/trick/trick_sims/SIM_billiards && \
+RUN cd /opt/trick/trick_sims/SIM_billiards && \
   trick-CP
 
-FROM gl-runtime as billiards-sim
-COPY --from=billiards-build /home/trick/trick_sims/SIM_billiards/ /home/trick/trick_sims/SIM_billiards/
+FROM gl-runtime as billiards-gl-runtime
+COPY --chown=1000:1000 --from=billiards-build /opt/trick/trick_sims/SIM_billiards/ /home/trick/trick_sims/SIM_billiards/
 WORKDIR /home/trick/trick_sims/SIM_billiards
+
+####### Sun sim example with both Minimal Headless Runtime image and Virtual Desktop Images both delivered
+FROM trick-test as sun-build
+COPY "./trick_sims/SIM_sun" /opt/sim
+RUN cd /opt/sim/ && trick-CP
+
+FROM trick-test as sun-gui-build
+COPY "./trick_sims/SIM_sun/models/graphics" /opt/sim/models/graphics
+RUN cd /opt/sim/models/graphics && make
+
+FROM minimal-base as sun-sim-cli-runtime
+COPY --chown=1000:1000 --from=sun-build /opt/sim /home/trick/sim
+RUN adduser --home $HOME -u  1000 trick
+USER 1000
+WORKDIR /home/trick/sim
+CMD ./S_main*.exe RUN_Summer/input.py
+
+FROM gui-runtime as sun-sim-gui-runtime
+COPY --chown=1000:1000 --from=sun-build /opt/sim /home/trick/sim
+COPY --chown=1000:1000 --from=sun-gui-build /opt/sim/models/graphics /home/trick/sim/models/graphics
+WORKDIR /home/trick/sim

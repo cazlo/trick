@@ -503,16 +503,25 @@ trick_lib: $(SIM_SERV_DIRS) $(UTILS_DIRS) | $(TRICK_LIB_DIR)
 
 target=trick-test
 os=ubuntu2204
-# options for target = trick-test, cli-runtime, gui-runtime
+# options for target =
+#   trick-test
+#   cli-runtime
+#   gui-runtime
+#   sun-sim-cli-runtime
+#   sun-sim-gui-runtime
 # options for os     = ubuntu2204, rocky8
 .PHONY: run-docker
 run-docker:
 	export DOCKERFILE=infra/${os}.Dockerfile &&\
-	docker compose -f infra/docker-compose.yaml run \
+	docker compose -f infra/docker-compose.yaml  run \
 	 --service-ports --remove-orphans --build ${target}
 
-target_mesa=mesa-default-docker
-# options for target_mesa = mesa-default-docker, mesa-rootless-docker
+target_mesa=mesa-gl-default-docker
+# options for target_mesa =
+#   mesa-gl-default-docker
+#   mesa-gl-rootless-docker
+#   mesa-gl-billiards-sim-default-docker
+#   mesa-gl-billiards-sim-rootless-docker
 .PHONY: run-docker-mesa
 run-docker-mesa:
 	VIDEO_GROUP_NUMBER=$(shell getent group video | cut -d: -f3) \
@@ -522,3 +531,6 @@ run-docker-mesa:
 	docker compose -f infra/docker-compose.yaml run \
 	 --service-ports --remove-orphans --build ${target_mesa}
 
+.PHONY: clean-docker
+clean-docker:
+	docker compose -f infra/docker-compose.yaml rm -f

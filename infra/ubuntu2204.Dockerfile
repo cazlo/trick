@@ -1,9 +1,36 @@
 # syntax=docker/dockerfile:1.7-labs
-FROM ubuntu:22.04 as base
-
+# This layer represents the bare minimum dependencies needed to run trick sims after they are compiled
+FROM ubuntu:22.04 as minimal-base
 ENV DEBIAN_FRONTEND=noninteractive
-
 RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+apt update && apt upgrade -y &&  apt install -y \
+    python3-dev \
+    libudunits2-dev \
+    zlib1g-dev \
+    libxml2-dev
+
+FROM minimal-base as minimal-sim-compile-base
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+apt update && apt upgrade -y &&  apt install -y \
+clang \
+llvm \
+make \
+cmake \
+zip \
+\
+swig \
+g++ \
+libxml2-dev \
+zlib1g-dev \
+llvm-dev \
+libclang-dev \
+libudunits2-dev
+
+FROM minimal-sim-compile-base as base
+
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
 apt update && apt upgrade -y &&  apt install -y \
@@ -49,21 +76,30 @@ mv lib/libgtest* /usr/lib/ \
 
 ENV PYTHON_VERSION=3
 
-COPY --link --exclude=infra --exclude=docs --exclude=*.Dockerfile . /opt/trick
-RUN cd /opt/trick && ls -alh && ./configure && make -j $(nproc) && make install
-#    && make clean && rm -rf /root/.m2
+COPY --link --exclude=infra --exclude=docs --exclude=trick_sims --exclude=*.Dockerfile . /opt/trick
+RUN cd /opt/trick && ls -alh && ./configure && make -j $(nproc) && make install &&\
+     trick-version --help &&\
+     rm -rf /root/.m2 &&\
+     rm -rf /user/localshare/doc
+#    && make clean
 
-RUN trick-version --help || true
+# todo  everything below could probably be done as user 1000
+# setup test dependencies
+RUN cd /opt/trick/share/trick/trickops/ && \
+     python3 -m venv .venv && . .venv/bin/activate && pip3 install -r requirements.txt
+
+COPY --link ./trick_sims /opt/trick/trick_sims
 
 WORKDIR /opt/trick
-CMD cd share/trick/trickops/ && \
- python3 -m venv .venv && . .venv/bin/activate && pip3 install -r requirements.txt && \
- cd ../../../; make test
+CMD cd /opt/trick/share/trick/trickops && \
+. .venv/bin/activate && \
+cd /opt/trick && \
+make test
 
-FROM base as trick
+FROM minimal-sim-compile-base as cli-runtime
 COPY --link --from=trick-test /usr/local /usr/local
 
-FROM base as runtime
+FROM minimal-base as gui-runtime
 
 ## Connection ports for controlling the UI:
 # VNC port:5901
@@ -110,7 +146,7 @@ RUN mkdir -p $NO_VNC_HOME/utils/websockify && \
   ## for lighter interface try `vnc_lite.html` instead of `vnc.html`
   ln -s $NO_VNC_HOME/vnc.html $NO_VNC_HOME/index.html
 
-# echo "Install Xfce4 UI components and disable screensaver and conflicting terminal"
+# Install Xfce4 UI components and disable screensaver and conflicting terminal
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
 apt update && apt install -y \
@@ -123,6 +159,13 @@ apt remove -y \
     gnome-terminal && \
 #  rm /etc/xdg/autostart/xfce-polkit*  && \
   /bin/dbus-uuidgen > /etc/machine-id
+
+# Install trick GUI runtime dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+apt update && apt install -y \
+    default-jre \
+    libmotif-common
 
 ADD ./infra/xfce/ $HOME/
 
@@ -140,21 +183,22 @@ RUN adduser --home $HOME -u  1000 trick
 
 USER 1000
 
-COPY --link --from=trick /usr/local /usr/local
+COPY --link --from=trick-test /usr/local /usr/local
 COPY --link --chown=1000:1000 ./trick_sims/  /home/trick/trick_sims
 
 ENTRYPOINT ["/opt/dockerstartup/vnc_startup.sh"]
 
-FROM runtime as gl-runtime
+FROM gui-runtime as gl-runtime
 
 USER 0
 
-# TurboVNC + VirtualGL
+# VirtualGL dependencies
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
 apt update && apt install -y \
 libglu1-mesa libxv1 libegl1-mesa libxtst6 xauth mesa-utils
-# should probably build from source in-line and/or pull from github artifacts for 3.1.1 tag
+
+# For production, should probably build VirtualGL from source in-line and/or pull from github src zip for 3.1.1 tag
 # note replace `amd64` string below with `arm64` for apple silicon or other arm runtimes
 ADD https://github.com/VirtualGL/virtualgl/releases/download/3.1.1/virtualgl_3.1.1_amd64.deb /tmp/virtualgl.deb
 RUN apt install -y /tmp/virtualgl.deb && \
@@ -167,7 +211,8 @@ RUN sed -i "s|Exec=startxfce4|Exec=vglrun -wm /usr/bin/startxfce4 --replace|" /u
 
 USER 1000
 
-FROM runtime as billiards-build
+####### Billiards sim example with only Virtual Desktop Image setup due to tight coupling with this sim and display
+FROM trick-test as billiards-build
 
 USER 0
 # billiards deps
@@ -178,12 +223,33 @@ apt update && apt install -y \
 
 USER 1000
 
-RUN cd /home/trick/trick_sims/SIM_billiards/models/graphics/cpp && \
+RUN cd /opt/trick/trick_sims/SIM_billiards/models/graphics/cpp && \
   mkdir build && cd build && cmake .. && make -j $(nproc)
 
-RUN cd /home/trick/trick_sims/SIM_billiards && \
+RUN cd /opt/trick/trick_sims/SIM_billiards && \
   trick-CP
 
-FROM gl-runtime as billiards-sim
-COPY --from=billiards-build /home/trick/trick_sims/SIM_billiards/ /home/trick/trick_sims/SIM_billiards/
+FROM gl-runtime as billiards-gl-runtime
+COPY --chown=1000:1000 --from=billiards-build /opt/trick/trick_sims/SIM_billiards/ /home/trick/trick_sims/SIM_billiards/
 WORKDIR /home/trick/trick_sims/SIM_billiards
+
+####### Sun sim example with both Minimal Headless Runtime image and Virtual Desktop Images both delivered
+FROM trick-test as sun-build
+COPY "./trick_sims/SIM_sun" /opt/sim
+RUN cd /opt/sim/ && trick-CP
+
+FROM trick-test as sun-gui-build
+COPY "./trick_sims/SIM_sun/models/graphics" /opt/sim/models/graphics
+RUN cd /opt/sim/models/graphics && make
+
+FROM minimal-base as sun-sim-cli-runtime
+COPY --chown=1000:1000 --from=sun-build /opt/sim /home/trick/sim
+RUN adduser --home $HOME -u  1000 trick
+USER 1000
+WORKDIR /home/trick/sim
+CMD ./S_main*.exe RUN_Summer/input.py
+
+FROM gui-runtime as sun-sim-gui-runtime
+COPY --chown=1000:1000 --from=sun-build /opt/sim /home/trick/sim
+COPY --chown=1000:1000 --from=sun-gui-build /opt/sim/models/graphics /home/trick/sim/models/graphics
+WORKDIR /home/trick/sim

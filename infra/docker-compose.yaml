@@ -11,13 +11,15 @@ services:
       target: trick-test
     volumes:
       - ./test_reports:/opt/trick/trick_test
+#    command:
+#      - /bin/bash
 
   cli-runtime:
     image: nasatrick/cli-runtime
     build:
       context: ..
       dockerfile: ${DOCKERFILE}
-      target: trick
+      target: cli-runtime
     ports:
       - "9001:9001" # default port of trick variable server
     volumes:
@@ -28,20 +30,20 @@ services:
     build:
       context: ..
       dockerfile: ${DOCKERFILE}
-      target: runtime
+      target: gui-runtime
     volumes:
       - /dev/shm:/dev/shm # not necessary, but used by vnc if provided
     ports:
       - "5901:5901" # VNC
       - "6901:6901" # noVNC
 
-  ####  GL accerated runtimes
-  mesa-default-docker:
-    image: nasatrick/mesa-default-docker
+  ####  GL accelerated runtimes
+  mesa-gl-default-docker:
+    image: nasatrick/mesa-gl-docker
     build:
       context: ..
       dockerfile: ${DOCKERFILE}
-      target: billiards-sim
+      target: gl-runtime
     volumes:
       - /dev/shm:/dev/shm # not necessary, but used by vnc if provided
     ports:
@@ -50,16 +52,12 @@ services:
     environment:
       DEBUG: "true"
       DISPLAY: ":1"
-      VGL_DISPLAY: "${CARD_NUMBER:-card1}"
-      #      TURBO_VNC: "true"
-      #      TURBO_VNC_VIRTUALGL: "true"
+      VGL_DISPLAY: "${CARD_NUMBER:-/dev/dri/card1}"
       TIGER_VNC_VIRTUALGL: "true"
       # VNC_RESOLUTION: "3840x2160"
-#      VIDEO_GROUP_NUMBER: "${VIDEO_GROUP_NUMBER:-$(getent group video | cut -d: -f3)}"
-#      RENDER_GROUP_NUMBER: "${VIDEO_GROUP_NUMBER:-$(getent group render | cut -d: -f3)}"
     devices:
-      - "/dev/dri/renderD128:/dev/dri/renderD128"
-      - "${CARD_NUMBER:-card1}:${CARD_NUMBER:-card1}"
+      - "/dev/dri/renderD128:/dev/dri/renderD128:rwm"
+      - "${CARD_NUMBER:-card1}:${CARD_NUMBER:-card1}:rwm"
     tty: true
     command:
       - /bin/bash
@@ -72,12 +70,12 @@ services:
 
   # note: this is intended to only be used when in the docker "rootless" context
   # not the "default" context, which is root-full
-  mesa-rootless-docker:
-    image: nasatrick/mesa-rootless-docker
+  mesa-gl-rootless-docker:
+    image: nasatrick/mesa-gl-docker
     build:
       context: ..
       dockerfile: ${DOCKERFILE}
-      target: billiards-sim
+      target: gl-runtime
     volumes:
       - /dev/shm:/dev/shm # not necessary, but used by vnc if provided
     ports:
@@ -86,11 +84,11 @@ services:
     environment:
       DEBUG: "true"
       DISPLAY: ":1"
-      VGL_DISPLAY: "${CARD_NUMBER:-card1}"
+      VGL_DISPLAY: "${CARD_NUMBER:-/dev/dri/card1}"
       TIGER_VNC_VIRTUALGL: "true"
     devices:
-      - "/dev/dri/renderD128:/dev/dri/renderD128"
-      - "${CARD_NUMBER:-card1}:${CARD_NUMBER:-card1}"
+      - "/dev/dri/renderD128:/dev/dri/renderD128:rwm"
+      - "${CARD_NUMBER:-card1}:${CARD_NUMBER:-card1}:rwm"
     tty: true
     command:
       - /bin/bash
@@ -100,3 +98,33 @@ services:
       - render
       - ${VIDEO_GROUP_NUMBER:-1}
       - ${RENDER_GROUP_NUMBER:-2}
+
+  #### Example minimal distributable runtimes for Trick Billiards sim
+  mesa-gl-billiards-sim-default-docker:
+    extends:
+      service: mesa-gl-default-docker
+    image: nasatrick/mesa-gl-billiards-sim
+    build:
+      target: billiards-gl-runtime
+
+  mesa-gl-billiards-sim-rootless-docker:
+    extends:
+      service: mesa-gl-rootless-docker
+    image: nasatrick/mesa-gl-billiards-sim
+    build:
+      target: billiards-gl-runtime
+
+  #### Example minimal distributable runtime for Trick Sun sim
+  sun-sim-cli-runtime:
+    image: nasatrick/sun-sim-cli-runtime
+    extends:
+      service: cli-runtime
+    build:
+      target: sun-sim-cli-runtime
+
+  sun-sim-gui-runtime:
+    image: nasatrick/sun-sim-gui-runtime
+    extends:
+      service: gui-runtime
+    build:
+      target: sun-sim-gui-runtime

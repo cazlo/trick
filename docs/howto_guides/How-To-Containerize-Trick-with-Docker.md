@@ -212,7 +212,7 @@ make run-docker os=ubuntu2204 target=cli-runtime
 ```
 
 This command will build the Trick image (rebuilding layers to incorporate any changes as necessary).
-The command will drop you into a shell on Trick container where you can run command the lifecycle of the sim through CLI commands.
+The command will drop you into a shell on Trick container where you can command the lifecycle of the sim through CLI commands.
 To facilitate exploration of `trick_sim` examples, it mounts the trick_sims folder to `/opt/trick_sims`.
 To start the simulation run the following commands within the container:
 
@@ -253,7 +253,7 @@ An isolated, containerized X11 Desktop Environment setup for Trick is also provi
 
 This setup allows us to remotely or locally interact with a Trick instance's sim control without requiring any client installed locally, outside of VNC client or a web browser.
 
-It also scales well to multi or single deployment configurations and container orchestration technologies.
+It also scales well to multi or single machine deployment configurations and container orchestration technologies.
 
 #### Example Single machine Deployment
 
