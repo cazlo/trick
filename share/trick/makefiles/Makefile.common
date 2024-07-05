@@ -82,7 +82,7 @@ TRICK_RANLIB      =
 
 ifndef CONFIG_MK
 # These are the targets that are allowed to run without configure
-    ifeq ($(filter $(MAKECMDGOALS), clean real_clean spotless apocalypse run-docker run-docker-mesa clean-docker),)
+    ifeq ($(filter $(MAKECMDGOALS), clean real_clean spotless apocalypse run-docker run-docker-mesa run-docker-cluster clean-docker),)
         $(error Please run $(TRICK_HOME)/configure before running make $(MAKECMDGOALS))
     endif
 endif

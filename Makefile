@@ -531,6 +531,13 @@ run-docker-mesa:
 	docker compose -f infra/docker-compose.yaml run \
 	 --service-ports --remove-orphans --build ${target_mesa}
 
+.PHONY: run-docker-cluster
+# options for os     = ubuntu2204, rocky8
+run-docker-cluster:
+	export DOCKERFILE=infra/${os}.Dockerfile &&\
+	docker compose -f infra/trick-cluster.yaml  up \
+	 --remove-orphans --build
+
 .PHONY: clean-docker
 clean-docker:
 	docker compose -f infra/docker-compose.yaml rm -f

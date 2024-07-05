@@ -560,6 +560,7 @@ public class CannonDisplay extends JFrame {
         }
    
         public void play() {
+            if (clip == null) return;
             if (clip.isRunning()) clip.stop(); 
             clip.setFramePosition(0);
             clip.start();
@@ -683,6 +684,7 @@ public class CannonDisplay extends JFrame {
 
     public static void main(String[] args) throws IOException, InterruptedException {
 
+        // todo for distributed Trick examples, below should be a value like cannon-sim-cli-runtime
         String host = "localHost";
         int port = 0;
         boolean boom = false;

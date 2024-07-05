@@ -61,6 +61,12 @@ python3-dev \
 python3-pip \
 python3-venv
 # python2.7-dev
+ENV CIVETWEB_HOME=/opt/civetweb
+ADD https://github.com/civetweb/civetweb.git#v1.16 $CIVETWEB_HOME
+RUN ls -alh /opt && cd $CIVETWEB_HOME &&\
+    ls -alh &&\
+    mkdir lib &&\
+    make install-lib PREFIX=. CAN_INSTALL=1 WITH_WEBSOCKET=1
 
 FROM base as trick-test
 
@@ -77,7 +83,8 @@ mv lib/libgtest* /usr/lib/ \
 ENV PYTHON_VERSION=3
 
 COPY --link --exclude=infra --exclude=docs --exclude=trick_sims --exclude=*.Dockerfile . /opt/trick
-RUN cd /opt/trick && ls -alh && ./configure && make -j $(nproc) && make install &&\
+RUN cd /opt/trick && ./configure --with-civetweb=$CIVETWEB_HOME &&\
+     make -j $(nproc) && make install &&\
      trick-version --help &&\
      rm -rf /root/.m2 &&\
      rm -rf /user/localshare/doc
@@ -252,4 +259,25 @@ CMD ./S_main*.exe RUN_Summer/input.py
 FROM gui-runtime as sun-sim-gui-runtime
 COPY --chown=1000:1000 --from=sun-build /opt/sim /home/trick/sim
 COPY --chown=1000:1000 --from=sun-gui-build /opt/sim/models/graphics /home/trick/sim/models/graphics
+WORKDIR /home/trick/sim
+
+####### Cannon distributed sim example with both Minimal Headless Runtime image and Virtual Desktop Images both delivered
+FROM trick-test as cannon-build
+COPY "./trick_sims/Cannon" /opt/sim
+RUN cd /opt/sim/SIM_cannon_webserver && trick-CP
+
+FROM trick-test as cannon-gui-build
+COPY "./trick_sims/Cannon/models/graphics" /opt/sim/models/graphics
+RUN cd /opt/sim/models/graphics && make
+
+FROM minimal-base as cannon-sim-cli-runtime
+COPY --chown=1000:1000 --from=cannon-build /opt/sim /home/trick/sim
+RUN adduser --home $HOME -u  1000 trick
+USER 1000
+WORKDIR /home/trick/sim/SIM_cannon_webserver
+CMD ./S_main*.exe RUN_test/input.py
+
+FROM gui-runtime as cannon-sim-gui-runtime
+COPY --chown=1000:1000 --from=cannon-build /opt/sim /home/trick/sim
+COPY --chown=1000:1000 --from=cannon-gui-build /opt/sim/models/graphics /home/trick/sim/models/graphics
 WORKDIR /home/trick/sim
