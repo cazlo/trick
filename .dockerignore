@@ -8,3 +8,4 @@ LICENSE
 README.md
 .dockerignore
 docker-compose.yaml
+infra/test_reports

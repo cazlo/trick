@@ -684,7 +684,7 @@ public class CannonDisplay extends JFrame {
 
     public static void main(String[] args) throws IOException, InterruptedException {
 
-        // todo for distributed Trick examples, below should be a value like cannon-sim-cli-runtime
+        // todo for distributed Trick examples, below should be a value like cannon-sim-server-runtime
         String host = "localHost";
         int port = 0;
         boolean boom = false;

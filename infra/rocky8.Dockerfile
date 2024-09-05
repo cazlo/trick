@@ -14,9 +14,9 @@ python3-devel \
 udunits2-devel \
 zlib-devel \
 libxml2-devel
+ENV CIVETWEB_HOME=/opt/civetweb
 
-FROM minimal-base as minimal-sim-compile-base
-
+FROM minimal-base as minimal-compile-base
 RUN dnf install -y \
 clang \
 llvm \
@@ -24,6 +24,8 @@ make \
 cmake \
 zip \
 \
+perl \
+perl-Digest-MD5 \
 swig \
 gcc-c++ \
 libxml2-devel \
@@ -31,6 +33,16 @@ zlib-devel \
 llvm-devel \
 clang-devel \
 udunits2-devel
+
+FROM minimal-compile-base as civetweb
+ADD https://github.com/civetweb/civetweb.git#v1.16 $CIVETWEB_HOME
+RUN ls -alh /opt && cd $CIVETWEB_HOME &&\
+    ls -alh &&\
+    mkdir lib &&\
+    make install-lib PREFIX=. CAN_INSTALL=1 WITH_WEBSOCKET=1
+
+FROM minimal-compile-base as minimal-sim-compile-base
+COPY --from=civetweb /opt/civetweb/lib /opt/civetweb/lib
 
 FROM minimal-sim-compile-base as base
 
@@ -59,19 +71,10 @@ llvm-static \
 clang-devel \
 udunits2 \
 udunits2-devel \
-perl \
-perl-Digest-MD5 \
 which \
 java-11-openjdk \
 python3-devel && \
   dnf clean all
-
-ENV CIVETWEB_HOME=/opt/civetweb
-ADD https://github.com/civetweb/civetweb.git#v1.16 $CIVETWEB_HOME
-RUN ls -alh /opt && cd $CIVETWEB_HOME &&\
-    ls -alh &&\
-    mkdir lib &&\
-    make install-lib PREFIX=. CAN_INSTALL=1 WITH_WEBSOCKET=1
 
 FROM base as trick-test
 
@@ -82,11 +85,12 @@ gtest-devel gmock-devel swig diffutils  bison  java-11-openjdk-devel ncurses-dev
 
 ENV PYTHON_VERSION=3
 
+COPY --link --from=civetweb $CIVETWEB_HOME $CIVETWEB_HOME
 COPY --link --exclude=infra --exclude=docs --exclude=*.Dockerfile . /opt/trick
 RUN cd /opt/trick && ls -alh && ./configure --with-civetweb=$CIVETWEB_HOME && make -j $(nproc) && make install &&\
      trick-version --help &&\
-     rm -rf /root/.m2 && \
-     rm -rf /user/localshare/doc
+     rm -rf /root/.m2 &&\
+     rm -rf /usr/localshare/doc
 #    && make clean
 
 # todo  everything below could probably be done as user 1000
@@ -101,6 +105,20 @@ CMD cd /opt/trick/share/trick/trickops && \
 . .venv/bin/activate && \
 cd /opt/trick && \
 make test
+
+FROM trick-test as koviz-build
+USER 0
+RUN dnf install -y qt5-qtbase-devel bison clang flex make gcc gcc-c++ wget
+# note for a production use of this we would want to lock to
+ADD https://github.com/nasa/koviz.git /opt/koviz/
+RUN cd /opt/koviz && qmake-qt5 && make -j $(nproc) && make install && make clean
+
+FROM trick-test as trick-test-with-koviz
+COPY --from=koviz-build /usr/local/bin/koviz /usr/local/bin/koviz
+CMD cd /opt/trick/share/trick/trickops && \
+. .venv/bin/activate && \
+cd /opt/trick/share/trick/trickops/tests && \
+ ./run_tests.py
 
 FROM minimal-sim-compile-base as cli-runtime
 COPY --link --from=trick-test /usr/local /usr/local
@@ -211,6 +229,18 @@ RUN sed -i "s|Exec=startxfce4|Exec=vglrun -wm /usr/bin/startxfce4 --replace|" /u
 
 USER 1000
 
+FROM gui-runtime as koviz-gui-runtime
+USER 0
+RUN dnf install -y qt5-qtbase-devel
+COPY --from=koviz-build /usr/local/bin/koviz /usr/local/bin/koviz
+USER 1000
+
+FROM gl-runtime as koviz-gl-runtime
+USER 0
+RUN dnf install -y qt5-qtbase-devel
+COPY --from=koviz-build /usr/local/bin/koviz /usr/local/bin/koviz
+USER 1000
+
 ####### Billiards sim example with only Virtual Desktop Image setup due to tight coupling with this sim and display
 FROM trick-test as billiards-build
 
@@ -273,3 +303,17 @@ FROM gui-runtime as cannon-sim-gui-runtime
 COPY --chown=1000:1000 --from=cannon-build /opt/sim /home/trick/sim
 COPY --chown=1000:1000 --from=cannon-gui-build /opt/sim/models/graphics /home/trick/sim/models/graphics
 WORKDIR /home/trick/sim
+
+####### Spring sim example with normal and GPU accelerated Virtual Desktop Images both delivered
+
+FROM trick-test as spring-sim-build
+COPY --chown=1000:1000 --from=koviz-build /opt/koviz /opt/koviz
+RUN cd /opt/koviz/sims/SIM_spring && trick-CP
+
+FROM koviz-gui-runtime as spring-sim-gui-runtime
+COPY --chown=1000:1000 --from=spring-sim-build /opt/koviz /home/trick/koviz
+WORKDIR /home/trick/koviz/sims/SIM_spring
+
+FROM koviz-gl-runtime as spring-sim-gl-runtime
+COPY --chown=1000:1000 --from=spring-sim-build /opt/koviz /home/trick/koviz
+WORKDIR /home/trick/koviz/sims/SIM_spring

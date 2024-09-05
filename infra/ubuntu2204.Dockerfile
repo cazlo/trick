@@ -10,8 +10,9 @@ apt update && apt upgrade -y &&  apt install -y \
     libudunits2-dev \
     zlib1g-dev \
     libxml2-dev
+ENV CIVETWEB_HOME=/opt/civetweb
 
-FROM minimal-base as minimal-sim-compile-base
+FROM minimal-base as minimal-compile-base
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   --mount=type=cache,target=/var/lib/apt,sharing=locked \
 apt update && apt upgrade -y &&  apt install -y \
@@ -28,6 +29,16 @@ zlib1g-dev \
 llvm-dev \
 libclang-dev \
 libudunits2-dev
+
+FROM minimal-compile-base as civetweb
+ADD https://github.com/civetweb/civetweb.git#v1.16 $CIVETWEB_HOME
+RUN ls -alh /opt && cd $CIVETWEB_HOME &&\
+    ls -alh &&\
+    mkdir lib &&\
+    make install-lib PREFIX=. CAN_INSTALL=1 WITH_WEBSOCKET=1
+
+FROM minimal-compile-base as minimal-sim-compile-base
+COPY --from=civetweb /opt/civetweb/lib /opt/civetweb/lib
 
 FROM minimal-sim-compile-base as base
 
@@ -60,13 +71,6 @@ default-jdk \
 python3-dev \
 python3-pip \
 python3-venv
-# python2.7-dev
-ENV CIVETWEB_HOME=/opt/civetweb
-ADD https://github.com/civetweb/civetweb.git#v1.16 $CIVETWEB_HOME
-RUN ls -alh /opt && cd $CIVETWEB_HOME &&\
-    ls -alh &&\
-    mkdir lib &&\
-    make install-lib PREFIX=. CAN_INSTALL=1 WITH_WEBSOCKET=1
 
 FROM base as trick-test
 
@@ -82,12 +86,13 @@ mv lib/libgtest* /usr/lib/ \
 
 ENV PYTHON_VERSION=3
 
+COPY --link --from=civetweb $CIVETWEB_HOME $CIVETWEB_HOME
 COPY --link --exclude=infra --exclude=docs --exclude=trick_sims --exclude=*.Dockerfile . /opt/trick
 RUN cd /opt/trick && ./configure --with-civetweb=$CIVETWEB_HOME &&\
      make -j $(nproc) && make install &&\
      trick-version --help &&\
      rm -rf /root/.m2 &&\
-     rm -rf /user/localshare/doc
+     rm -rf /usr/localshare/doc
 #    && make clean
 
 # todo  everything below could probably be done as user 1000
@@ -102,6 +107,22 @@ CMD cd /opt/trick/share/trick/trickops && \
 . .venv/bin/activate && \
 cd /opt/trick && \
 make test
+
+FROM trick-test as koviz-build
+USER 0
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  apt install -y vim sudo qtbase5-dev g++ automake make flex bison
+# note for a production use of this we would want to lock to
+ADD https://github.com/nasa/koviz.git /opt/koviz/
+RUN cd /opt/koviz && qmake && make -j $(nproc) && make install && make clean
+
+FROM trick-test as trick-test-with-koviz
+COPY --from=koviz-build /usr/local/bin/koviz /usr/local/bin/koviz
+CMD cd /opt/trick/share/trick/trickops && \
+. .venv/bin/activate && \
+cd /opt/trick/share/trick/trickops/tests && \
+ ./run_tests.py
 
 FROM minimal-sim-compile-base as cli-runtime
 COPY --link --from=trick-test /usr/local /usr/local
@@ -218,6 +239,22 @@ RUN sed -i "s|Exec=startxfce4|Exec=vglrun -wm /usr/bin/startxfce4 --replace|" /u
 
 USER 1000
 
+FROM gui-runtime as koviz-gui-runtime
+USER 0
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  apt install -y qtbase5-dev
+COPY --from=koviz-build /usr/local/bin/koviz /usr/local/bin/koviz
+USER 1000
+
+FROM gl-runtime as koviz-gl-runtime
+USER 0
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt,sharing=locked \
+  apt install -y qtbase5-dev
+COPY --from=koviz-build /usr/local/bin/koviz /usr/local/bin/koviz
+USER 1000
+
 ####### Billiards sim example with only Virtual Desktop Image setup due to tight coupling with this sim and display
 FROM trick-test as billiards-build
 
@@ -240,7 +277,7 @@ FROM gl-runtime as billiards-gl-runtime
 COPY --chown=1000:1000 --from=billiards-build /opt/trick/trick_sims/SIM_billiards/ /home/trick/trick_sims/SIM_billiards/
 WORKDIR /home/trick/trick_sims/SIM_billiards
 
-####### Sun sim example with both Minimal Headless Runtime image and Virtual Desktop Images both delivered
+####### Sun sim example with Minimal Headless Runtime image and Virtual Desktop Images both delivered
 FROM trick-test as sun-build
 COPY "./trick_sims/SIM_sun" /opt/sim
 RUN cd /opt/sim/ && trick-CP
@@ -261,7 +298,7 @@ COPY --chown=1000:1000 --from=sun-build /opt/sim /home/trick/sim
 COPY --chown=1000:1000 --from=sun-gui-build /opt/sim/models/graphics /home/trick/sim/models/graphics
 WORKDIR /home/trick/sim
 
-####### Cannon distributed sim example with both Minimal Headless Runtime image and Virtual Desktop Images both delivered
+####### Cannon distributed sim example with Minimal Headless Runtime image and Virtual Desktop Images both delivered
 FROM trick-test as cannon-build
 COPY "./trick_sims/Cannon" /opt/sim
 RUN cd /opt/sim/SIM_cannon_webserver && trick-CP
@@ -281,3 +318,17 @@ FROM gui-runtime as cannon-sim-gui-runtime
 COPY --chown=1000:1000 --from=cannon-build /opt/sim /home/trick/sim
 COPY --chown=1000:1000 --from=cannon-gui-build /opt/sim/models/graphics /home/trick/sim/models/graphics
 WORKDIR /home/trick/sim
+
+####### Spring sim example with normal and GPU accelerated Virtual Desktop Images both delivered
+
+FROM trick-test as spring-sim-build
+COPY --chown=1000:1000 --from=koviz-build /opt/koviz /opt/koviz
+RUN cd /opt/koviz/sims/SIM_spring && trick-CP
+
+FROM koviz-gui-runtime as spring-sim-gui-runtime
+COPY --chown=1000:1000 --from=spring-sim-build /opt/koviz /home/trick/koviz
+WORKDIR /home/trick/koviz/sims/SIM_spring
+
+FROM koviz-gl-runtime as spring-sim-gl-runtime
+COPY --chown=1000:1000 --from=spring-sim-build /opt/koviz /home/trick/koviz
+WORKDIR /home/trick/koviz/sims/SIM_spring
