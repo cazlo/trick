@@ -1,0 +1,1 @@
+KERNEL=="card*|renderD*", MODE="0666", OWNER="root", GROUP="root"

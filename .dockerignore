@@ -1,0 +1,11 @@
+infra/*.Dockerfile
+.git
+.gitattributes
+.gitignore
+.github
+.idea
+LICENSE
+README.md
+.dockerignore
+docker-compose.yaml
+infra/test_reports

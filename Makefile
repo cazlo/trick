@@ -500,3 +500,54 @@ trick_lib: $(SIM_SERV_DIRS) $(UTILS_DIRS) | $(TRICK_LIB_DIR)
 
 # For NASA/JSC developers include optional rules
 -include Makefile_jsc_dirs
+
+target=trick-test
+os=ubuntu2204
+# options for target =
+#   trick-test
+#   cli-runtime
+#   gui-runtime
+#   koviz-gui-runtime
+#   sun-sim-cli-runtime
+#   sun-sim-gui-runtime
+#   spring-sim-gui-runtime
+# options for os     = ubuntu2204, rocky8
+.PHONY: run-docker
+run-docker:
+	DOCKERFILE=infra/${os}.Dockerfile \
+	OS_ID=${os} \
+	docker compose -f infra/docker-compose.yaml  run \
+	 --service-ports --remove-orphans --build ${target}
+
+target_mesa=mesa-gl-default-docker
+# options for target_mesa =
+#   mesa-gl-default-docker
+#   mesa-gl-rootless-docker
+#   mesa-gl-billiards-sim-default-docker
+#   mesa-gl-billiards-sim-rootless-docker
+#   mesa-gl-spring-sim-default-docker
+#   mesa-gl-spring-sim-rootless-docker
+.PHONY: run-docker-mesa
+run-docker-mesa:
+	VIDEO_GROUP_NUMBER=$(shell getent group video | cut -d: -f3) \
+	RENDER_GROUP_NUMBER=$(shell getent group render | cut -d: -f3) \
+	CARD_NUMBER=$(shell find /dev/dri -name 'card*' -print -quit | head -n 1) \
+	DOCKERFILE=infra/${os}.Dockerfile \
+	OS_ID=${os} \
+	docker compose -f infra/docker-compose.yaml run \
+	 --service-ports --remove-orphans --build ${target_mesa}
+
+.PHONY: run-docker-cluster
+target_profile=distributed-cannon-sim
+# options for target_profile =
+#   distributed-cannon-sim
+# options for os     = ubuntu2204, rocky8
+run-docker-cluster:
+	DOCKERFILE=infra/${os}.Dockerfile \
+	OS_ID=${os} \
+	docker compose -f infra/docker-compose.yaml --profile ${target_profile} up \
+	 --remove-orphans --build
+
+.PHONY: clean-docker
+clean-docker:
+	docker compose -f infra/docker-compose.yaml rm -f

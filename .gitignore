@@ -33,6 +33,7 @@ trick-offline
 civetweb_clone/
 include/civet/
 .vscode/
+.idea/
 civet_server_error.log
 server.pem
 archive/
@@ -43,3 +44,4 @@ trickops_logs/
 coverage.info
 *.dSYM
 *.log
+infra/test_reports

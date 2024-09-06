@@ -57,7 +57,7 @@
           }
 
           var varTable = document.querySelector('table.variables');
-          var ws = new WebSocket("ws://localhost:8888/api/ws/VariableServer", "myProtocol");
+          var ws = new WebSocket("ws://localhost:8888/api/ws/VariableServer");
 
           // WebSocket Event Handlers
           ws.onopen = function(e) {
@@ -87,7 +87,6 @@
           };
           ws.onerror = function(e) {
              console.log("WebSocket Error: " , e);
-             handleErrors(e);
           };
           ws.onclose = function(e) {
              console.log("Connection closed", e);
